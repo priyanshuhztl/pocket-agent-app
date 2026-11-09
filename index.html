@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pocket Agent</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; object-src 'none'">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <meta name="theme-color" content="#2f6b4f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Pocket Agent">
+  <style>
+    :root { --bg:#f6f5f1; --card:#fff; --text:#1e1c19; --muted:#6b675f; --line:#dedbd3; --accent:#2f6b4f; --warn:#e0a526; --screen:#151a17; --screen-text:#d9e4dc; --error:#b3261e; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#111412; --card:#1a1e1b; --text:#e8e6e1; --muted:#9a968d; --line:#2d332f; --accent:#6fbf94; --warn:#f0bf55; --screen:#0b0d0c; --error:#f2b8b5; } }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width:900px; margin:0 auto; padding:16px; display:grid; gap:12px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    h1 { margin:0; font-size:20px; }
+    h2 { margin:0 0 4px; font-size:16px; }
+    p { margin:0; }
+    .muted { color:var(--muted); font-size:13px; }
+    form, .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .stack { flex-direction:column; align-items:stretch; max-width:420px; }
+    input, textarea { flex:1 1 220px; min-width:0; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+    .stack input { flex:none; }
+    textarea { resize:vertical; min-height:44px; }
+    button { padding:10px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; cursor:pointer; }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    button.active { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+    button.small { padding:6px 10px; font-size:13px; }
+    #sessions:empty::before { content:"No sessions yet. Start one above."; color:var(--muted); }
+    .mono { font:12px/1.35 ui-monospace, Menlo, Consolas, monospace; }
+    #screen { margin:0; min-height:240px; max-height:60vh; overflow:auto; padding:12px; border-radius:10px; background:var(--screen); color:var(--screen-text); white-space:pre; }
+    .session-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #status { flex:1 1 120px; color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .chip { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; background:var(--line); color:var(--text); white-space:nowrap; }
+    .chip.working { background:var(--accent); color:#fff; }
+    .chip.asking, button.asking { background:var(--warn); border-color:var(--warn); color:#1e1c19; }
+    #stop-button { border-color:var(--error); color:var(--error); }
+    .question { flex-direction:column; align-items:stretch; border:2px solid var(--warn); }
+    .options { display:grid; gap:8px; }
+    .options button { text-align:left; padding:14px; font-size:15px; }
+    .options button.current { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+    .error { color:var(--error); min-height:1em; margin:0; }
+    .keys summary { cursor:pointer; color:var(--muted); width:100%; }
+    .keys button { padding:8px 12px; font-family:ui-monospace, Menlo, Consolas, monospace; }
+    /* Small enough that Claude's narrowest clean width (52 columns) fits a phone screen. */
+    @media (max-width: 600px) { main { padding:12px; } .mono { font-size:10px; } }
+    #qr { width:180px; height:180px; flex:none; background:#fff; border-radius:8px; padding:6px; }
+    #qr svg { width:100%; height:100%; display:block; }
+    #connect-text { flex:1 1 240px; display:grid; gap:6px; }
+    #phone-link { overflow-wrap:anywhere; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:13px; }
+    .devices { display:grid; gap:8px; width:100%; }
+    .device { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+    .device.pending { padding:10px; border-radius:8px; border:1px solid var(--accent); }
+    .asks { flex-direction:column; align-items:stretch; border:2px solid var(--warn); }
+    .ask-list { display:grid; gap:16px; }
+    .ask { display:grid; gap:8px; }
+    .ask + .ask { border-top:1px solid var(--line); padding-top:16px; }
+    .ask.flash { animation:flash 1.2s ease-out 2; }
+    @keyframes flash { 50% { background:color-mix(in srgb, var(--warn) 25%, transparent); } }
+    .ask-action { font-size:17px; font-weight:600; overflow-wrap:anywhere; }
+    .ask pre { margin:0; max-height:30vh; overflow:auto; padding:10px; border-radius:8px; background:var(--screen); color:var(--screen-text); white-space:pre-wrap; overflow-wrap:anywhere; }
+    .ask-buttons { display:flex; gap:8px; flex-wrap:wrap; }
+    .ask-buttons button { flex:1 1 30%; padding:14px 10px; font-size:16px; font-weight:600; }
+    button.deny { border-color:var(--error); color:var(--error); }
+    .ask-question { display:grid; gap:6px; }
+    .options button.option { display:grid; gap:2px; text-align:left; padding:12px 14px; }
+    .option small { color:var(--muted); font-size:13px; }
+    .option.selected { border-color:var(--accent); box-shadow:inset 0 0 0 2px var(--accent); }
+    .ask-done { color:var(--muted); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .chats { max-width:none; }
+    .chats summary { cursor:pointer; list-style:none; }
+    .chats summary::-webkit-details-marker { display:none; }
+    .chats summary h2::after { content:" ▾"; color:var(--muted); }
+    .chats:not([open]) summary h2::after { content:" ▸"; }
+    #chats { max-height:50vh; overflow:auto; }
+    .chat-title { overflow-wrap:anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Pocket Agent</h1>
+      <button class="small" id="sign-out" hidden>Sign out</button>
+    </header>
+
+    <section id="setup-screen" hidden>
+      <form class="stack" id="setup-form">
+        <h2>Set a password</h2>
+        <p class="muted">You'll use it to sign in from your phone. At least 8 characters.</p>
+        <input id="setup-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required placeholder="Password" aria-label="Password">
+        <input id="setup-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required placeholder="Type it again" aria-label="Type the password again">
+        <button class="primary" type="submit">Save password</button>
+        <p class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="login-screen" hidden>
+      <form class="stack" id="login-form">
+        <h2>Sign in</h2>
+        <p class="muted" id="login-note">Enter the password you set on your computer.</p>
+        <input id="login-password" type="password" autocomplete="current-password" required placeholder="Password" aria-label="Password">
+        <button class="primary" type="submit">Sign in</button>
+        <p class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="scan-screen" hidden>
+      <div class="card stack">
+        <h2 id="scan-title">Connect to your computer</h2>
+        <p class="muted" id="scan-text">Open Pocket Agent on your computer and scan its QR code with this phone.</p>
+      </div>
+    </section>
+
+    <section id="waiting-screen" hidden>
+      <div class="card stack">
+        <h2>Waiting for approval</h2>
+        <p class="muted">Go to Pocket Agent on your computer and press <b>Approve</b>. This page continues by itself.</p>
+      </div>
+    </section>
+
+    <section id="app-screen" hidden>
+      <div style="display:grid; gap:12px">
+        <section class="card asks" id="asks" hidden aria-live="polite">
+          <h2 id="asks-title">Claude needs your OK</h2>
+          <div class="ask-list" id="ask-list"></div>
+        </section>
+        <div class="card" id="approvals" hidden></div>
+
+        <div class="card" id="connect" hidden>
+          <div id="qr" aria-label="QR code for your phone"></div>
+          <div id="connect-text">
+            <h2>Connect your phone</h2>
+            <p class="muted">Scan with your phone's camera, then sign in with your password. The code works once, for 10 minutes.</p>
+            <p id="phone-link"></p>
+          </div>
+        </div>
+
+        <div class="card" id="notify-card">
+          <div style="flex:1 1 220px"><h2>Notifications</h2><p class="muted" id="notify-text"></p></div>
+          <button class="small" id="notify-button" hidden></button>
+        </div>
+
+        <form id="start-form">
+          <input id="cwd" placeholder="Project folder, for example ~/projects/my-app" autocomplete="off" required aria-label="Project folder">
+          <button class="primary" type="submit">Start Claude</button>
+        </form>
+        <div class="card" id="sessions" aria-label="Sessions"></div>
+        <p class="error" id="error" role="alert"></p>
+
+        <details class="card stack chats" id="chats-card" open>
+          <summary><h2>Recent chats</h2></summary>
+          <p class="muted">Your saved Claude chats on this computer. Continue one where it left off.</p>
+          <div class="devices" id="chats"></div>
+        </details>
+
+        <section id="session" hidden style="display:grid; gap:12px">
+          <div class="session-bar">
+            <span class="chip" id="state-chip"></span>
+            <span id="status"></span>
+            <button class="small" id="stop-button" title="Interrupts what Claude is doing (Esc)">Stop</button>
+            <button class="small" id="end-button" title="Closes Claude in this session">End</button>
+          </div>
+          <pre id="screen" class="mono" aria-live="polite"></pre>
+          <div class="card question" id="question" hidden>
+            <strong>Claude is asking</strong>
+            <div class="options" id="options"></div>
+          </div>
+          <form id="message-form">
+            <textarea id="message" rows="2" placeholder="Message Claude… (Ctrl+Enter or ⌘+Enter to send)" aria-label="Message"></textarea>
+            <button class="primary" type="submit">Send</button>
+          </form>
+          <details class="card keys">
+            <summary>More keys</summary>
+            <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+            <button data-key="up" aria-label="Up">↑</button><button data-key="down" aria-label="Down">↓</button>
+            <button data-key="enter">Enter</button><button data-key="esc">Esc</button><button data-key="shift-tab">Shift+Tab · Mode</button>
+          </details>
+        </section>
+
+        <div class="card stack" style="max-width:none">
+          <h2>Devices</h2>
+          <div class="devices" id="devices"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

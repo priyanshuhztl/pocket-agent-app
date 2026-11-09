@@ -1,0 +1,18 @@
+{
+  "name": "Pocket Agent",
+  "short_name": "Pocket Agent",
+  "description": "Control the Claude Code sessions on your computer from your phone.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#111412",
+  "theme_color": "#2f6b4f",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "id": "./",
+  "scope": "./"
+}
