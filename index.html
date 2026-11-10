@@ -25,7 +25,7 @@
     .muted { color:var(--muted); font-size:13px; }
     form, .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .stack { flex-direction:column; align-items:stretch; max-width:420px; }
-    input, textarea { flex:1 1 220px; min-width:0; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+    input, textarea, select { flex:1 1 220px; min-width:0; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
     .stack input { flex:none; }
     textarea { resize:vertical; min-height:44px; }
     button { padding:10px 14px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; cursor:pointer; }
@@ -140,6 +140,15 @@
             <p class="muted">Scan with your phone's camera, then sign in with your password. The code works once, for 10 minutes.</p>
             <p id="phone-link"></p>
           </div>
+        </div>
+
+        <div class="card" id="test-card" hidden>
+          <div style="flex:1 1 240px"><h2>Test your phone</h2><p class="muted">Sends a pretend question from Claude to your phones, even while you are here. To test a sleeping phone, pick a delay, lock the phone and leave it.</p></div>
+          <select id="test-delay" aria-label="When to send it">
+            <option value="0">Now</option><option value="60">In 1 minute</option><option value="300" selected>In 5 minutes</option><option value="600">In 10 minutes</option>
+          </select>
+          <button class="primary" id="test-button">Send test</button>
+          <div class="devices" id="tests"></div>
         </div>
 
         <div class="card" id="notify-card">

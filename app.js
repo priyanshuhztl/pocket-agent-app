@@ -16,6 +16,9 @@ const SAVED = 'pocket-agent', KEY = 'pocket-agent-key'; // SAVED is shared with 
 const kept = async () => { try { return await (await (await caches.open(SAVED)).match('mac'))?.text() || ''; } catch { return ''; } };
 if (/^https:\/\//.test(fromQr.get('mac') || '')) await (await caches.open(SAVED)).put('mac', new Response(new URL(fromQr.get('mac')).origin));
 const onFixedPage = Boolean(await kept());
+// sw.js needs the key too, to tell the computer a notification arrived; it can't read localStorage.
+const keepKey = key => caches.open(SAVED).then(cache => key ? cache.put('key', new Response(key)) : cache.delete('key')).catch(() => {});
+if (onFixedPage) keepKey(localStorage.getItem(KEY));
 const OFFLINE = 'Can\'t reach your computer. It may be asleep or offline. If this lasts, scan the QR code on the computer again.';
 
 async function api(url, options = {}) {
@@ -77,7 +80,8 @@ function startApp() {
   // On the computer: the QR code (pairing codes last 10 minutes) and new devices to approve.
   if (local) {
     loadConnect().catch(() => {});
-    timers.push(setInterval(() => loadConnect().catch(() => {}), 5 * 60000), setInterval(() => loadDevices().catch(() => {}), 3000));
+    loadTests().catch(() => {});
+    timers.push(setInterval(() => loadConnect().catch(() => {}), 5 * 60000), setInterval(() => { loadDevices().catch(() => {}); loadTests().catch(() => {}); }, 3000));
   }
 }
 function stopApp() { timers.forEach(clearInterval); timers = []; followToken++; current = null; }
@@ -100,11 +104,16 @@ const keyBytes = base64url => Uint8Array.from(atob(base64url.replace(/-/g, '+').
 async function loadNotify() {
   const text = $('#notify-text'), button = $('#notify-button');
   const set = (message, label = '') => { text.textContent = message; button.textContent = label; button.hidden = !label; };
+  // They are for the phone: the computer is where you already are (and some browsers, like Brave, block them anyway).
+  if (local) return set('They go to your phone: turn them on in Pocket Agent on the phone. Check them with "Test your phone" above.');
   if (!pushSupported || !await worker) return set(/iPhone|iPad/.test(navigator.userAgent) ? 'On iPhone, add Pocket Agent to the Home Screen first (Share, then Add to Home Screen), and open it from there.' : 'This browser can\'t show notifications.');
   if (Notification.permission === 'denied') return set('Notifications are blocked for this site. Allow them in the browser\'s site settings.');
   const subscription = await (await worker).pushManager.getSubscription();
   const { subscribed } = subscription ? await api(`/api/push?endpoint=${encodeURIComponent(subscription.endpoint)}`) : { subscribed:false };
-  if (subscribed) set('On for this device. It buzzes when Claude needs you while you are away from the computer: lid closed, screen locked, or 1 minute without using it.', 'Turn off');
+  // Android holds back Chrome's notifications while the phone sleeps (they show when it wakes), unless Chrome's
+  // battery use is Unrestricted. Tested on Android 16: instant with it, only after waking without it.
+  const android = /Android/.test(navigator.userAgent) ? ' On Android, set Chrome\'s battery use to Unrestricted (Settings > Apps > Chrome > Battery), or they only show when you wake the phone.' : '';
+  if (subscribed) set(`On for this device. It buzzes when Claude needs you while you are away from the computer: lid closed, screen locked, or 1 minute without using it.${android}`, 'Turn off');
   else set('Get a notification when any Claude on your computer needs your OK or is done, while you are away from it.', 'Turn on');
   button.onclick = async () => {
     button.disabled = true;
@@ -123,6 +132,26 @@ async function loadNotify() {
     finally { button.disabled = false; loadNotify().catch(() => {}); }
   };
 }
+
+// On the computer: pretend questions to the phone (see startTest in index.js), and how each one went.
+const clock = date => new Date(date).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+async function loadTests() {
+  const { tests } = await api('/api/test');
+  $('#test-card').hidden = false;
+  $('#tests').replaceChildren(...tests.map(t => make('p', { className:'muted', textContent:
+    !t.sentAt ? `Sends at ${clock(t.at)}`
+    : `Sent at ${clock(t.sentAt)} to ${t.devices} device(s). ${reached(t)} ${!t.answeredAt ? 'Waiting for your answer on the phone…'
+      : t.answer ? `You answered "${t.answer}" ${seconds(t.sentAt, t.answeredAt)} s later.` : 'Not answered on the phone.'}` })));
+}
+const seconds = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 1000);
+function reached(t) {
+  if (!t.receipt) return t.devices ? 'Not on the phone yet.' : 'No phone has notifications on.';
+  return t.receipt.shown ? `It reached the phone ${seconds(t.sentAt, t.receipt.at)} s later and showed.`
+    : `It reached the phone ${seconds(t.sentAt, t.receipt.at)} s later, but the phone blocked it: ${t.receipt.permission === 'denied'
+      ? 'notifications are off for Pocket Agent there (Settings > Apps > Pocket Agent > Notifications, and Chrome\'s site settings).'
+      : `it said "${t.receipt.error || 'not shown'}".`}`;
+}
+$('#test-button').addEventListener('click', () => post('/api/test', { delay:Number($('#test-delay').value) }).then(loadTests, error => showError(error.message)));
 
 // Session ids live only while the app runs, so a notification from before a restart just opens the app.
 async function openFromUrl(url) {
@@ -362,13 +391,13 @@ $('#login-form').addEventListener('submit', async event => {
   event.preventDefault();
   try {
     const { status, key } = await post('/api/login', { password:$('#login-password').value, pairCode });
-    if (key) localStorage.setItem(KEY, key);
+    if (key) { localStorage.setItem(KEY, key); keepKey(key); }
     event.target.reset(); formError(event.target, '');
     status === 'approved' ? startApp() : waitForApproval();
   } catch (error) { formError(event.target, error.message); }
 });
 
-$('#sign-out').addEventListener('click', async () => { await post('/api/logout').catch(() => {}); localStorage.removeItem(KEY); stopApp(); show('login'); });
+$('#sign-out').addEventListener('click', async () => { await post('/api/logout').catch(() => {}); localStorage.removeItem(KEY); keepKey(''); stopApp(); show('login'); });
 
 $('#start-form').addEventListener('submit', async event => {
   event.preventDefault();

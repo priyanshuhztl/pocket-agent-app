@@ -1,8 +1,10 @@
 // Shows phone notifications, even when Pocket Agent is closed, and opens the right session when one is tapped.
 // It also keeps a copy of the app on the phone, used when its page can't be reached (offline, or the page is down),
-// and keeps the computer's new phone link when the computer sends it after a restart (see app.js).
+// and keeps the computer's new phone link when the computer sends it after a restart (see app.js). It tells the
+// computer each notification arrived, and whether the phone let it show (for "Test your phone" and the log).
 // Adapted from Shed (MIT, see NOTICE).
 const COPY = 'pocket-agent-app', SAVED = 'pocket-agent';
+const saved = async name => (await (await caches.open(SAVED)).match(name))?.text() || '';
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(caches.open(COPY).then(cache => cache.addAll(['./', 'app.js', 'manifest.webmanifest', 'icon.svg'])).catch(() => {}));
@@ -28,6 +30,7 @@ self.addEventListener('push', event => {
   event.waitUntil((async () => {
     // Only the computer can send these (they are signed with its key), so the link can be trusted.
     if (/^https:\/\//.test(data.link || '')) await (await caches.open(SAVED)).put('mac', new Response(new URL(data.link).origin));
+    let error = '';
     await self.registration.showNotification(data.title || 'Pocket Agent', {
       body:data.body || '',
       icon:'icon.svg',
@@ -35,7 +38,12 @@ self.addEventListener('push', event => {
       renotify:Boolean(data.tag) && !data.silent,
       silent:Boolean(data.silent),
       data:{ url:data.url || './' },
-    });
+    }).catch(e => { error = e.message || String(e); });
+    const shown = !error && (await self.registration.getNotifications({ tag:data.tag })).length > 0;
+    // The computer: its saved link and this device's key (app.js keeps both), or this page's own address and cookie.
+    const key = await saved('key');
+    await fetch(`${await saved('mac')}/api/push/receipt`, { method:'POST', headers:{ 'Content-Type':'application/json', ...(key ? { Authorization:`Bearer ${key}` } : {}) },
+      body:JSON.stringify({ tag:data.tag || '', shown, error, permission:self.Notification?.permission || '' }) }).catch(() => {});
   })());
 });
 
